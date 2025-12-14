@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shadowing Practice</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        .shadowing-layout {
+            display: flex;
+            gap: 20px;
+            height: calc(100vh - 100px);
+            position: relative;
+        }
+        .sidebar {
+            width: 250px;
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 8px;
+            overflow-y: auto;
+            flex-shrink: 0;
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s ease, width 0.3s ease, padding 0.3s ease;
+        }
+        .sidebar.collapsed {
+            width: 0;
+            padding: 0;
+            border: none;
+            overflow: hidden;
+        }
+        .content-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        .chapter-item {
+            margin-bottom: 10px;
+        }
+        .chapter-title {
+            font-weight: 600;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 4px;
+            color: var(--text-main);
+        }
+        .chapter-title:hover {
+            background: var(--group-bg);
+        }
+        .subtitle-list {
+            margin-left: 15px;
+            display: none;
+            margin-top: 5px;
+        }
+        .subtitle-item {
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 0.9em;
+            color: var(--text-muted);
+            border-radius: 4px;
+            display: block;
+        }
+        .subtitle-item:hover {
+            background: var(--group-bg);
+            color: var(--text-main);
+        }
+        .subtitle-item.active {
+            background: var(--primary-color);
+            color: white;
+        }
+        .sentence-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px var(--shadow-color);
+            border: 1px solid var(--border-color);
+        }
+        .sentence-text {
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            line-height: 1.5;
+            color: var(--text-main);
+        }
+        .sentence-meta {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .result-box {
+            margin-top: 15px;
+            padding: 10px;
+            background: var(--group-bg);
+            border-radius: 8px;
+            display: none;
+        }
+        .nav-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .nav-links a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: var(--text-main);
+            font-weight: 600;
+        }
+        .nav-links a.active {
+            color: var(--primary-color);
+        }
+
+        @media (max-width: 768px) {
+            .shadowing-layout {
+                flex-direction: column;
+                height: auto;
+            }
+            .sidebar {
+                width: 100%;
+                max-height: 200px;
+                margin-bottom: 20px;
+            }
+            .sidebar.collapsed {
+                display: none;
+            }
+            .content-area {
+                padding-right: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" style="max-width: 1200px;">
+        <header class="nav-header">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <h1>Shadowing Practice</h1>
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <nav class="nav-links">
+                    <a href="/">Flashcards</a>
+                    <a href="/shadowing" class="active">Shadowing</a>
+                </nav>
+                <button id="theme-toggle" class="btn-icon" aria-label="Toggle Dark Mode">🌙</button>
+            </div>
+        </header>
+
+        <div class="filters-bar" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; background: var(--card-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
+            <div style="flex: 1;">
+                <label for="book-select" style="display:block; margin-bottom:5px; font-weight:600; color:var(--text-main);">Book:</label>
+                <select id="book-select" style="width:100%; padding:8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-main);">
+                    <option value="">Select Book...</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label for="chapter-select" style="display:block; margin-bottom:5px; font-weight:600; color:var(--text-main);">Chapter:</label>
+                <select id="chapter-select" style="width:100%; padding:8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-main);" disabled>
+                    <option value="">Select Chapter...</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="shadowing-layout">
+            <main class="content-area" id="sentences-list" style="width: 100%;">
+                <div style="text-align: center; margin-top: 50px; color: var(--text-muted);">
+                    Select a book and chapter to start practicing.
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/shadowing.js') }}?v=5"></script>
+</body>
+</html>

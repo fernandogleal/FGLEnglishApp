@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Flashcards</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <h1>English Flashcards</h1>
+                    <nav>
+                        <a href="/" style="margin-right: 15px; font-weight: bold; color: var(--primary-color); text-decoration: none;">Flashcards</a>
+                        <a href="/shadowing" style="font-weight: bold; color: var(--text-main); text-decoration: none;">Shadowing</a>
+                    </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <button id="theme-toggle" class="btn-icon" aria-label="Toggle Dark Mode">🌙</button>
+                    <div class="controls">
+                        <label for="level-select">Level:</label>
+                        <select id="level-select">
+                            <option value="all">All Levels</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main id="card-container">
+            <div class="card" id="flashcard">
+                <div class="card-header">
+                    <span class="level-badge" id="card-level">B2</span>
+                    <span class="pos-badge" id="card-pos">verb</span>
+                </div>
+                
+                <h2 id="card-word">Loading...</h2>
+                
+                <div class="sentences">
+                    <div class="sentence-group">
+                        <h3>Formal</h3>
+                        <p id="sentence-formal">...</p>
+                        <p id="prosody-formal" class="prosody-text"></p>
+                        <div class="audio-controls-inline" id="controls-formal">
+                            <button class="btn-icon" onclick="playAudio('formal')">🔊 Listen</button>
+                            <button id="btn-record-formal" class="btn-icon btn-record" onclick="toggleRecording('formal')">🎤 Record</button>
+                            
+                            <div id="review-formal" class="hidden" style="display: inline-flex; gap: 5px;">
+                                <button class="btn-icon" onclick="playPreview('formal')">▶️ Preview</button>
+                                <button class="btn-icon btn-save" onclick="saveRecording('formal')">💾 Save</button>
+                                <button class="btn-icon btn-discard" onclick="discardRecording('formal')">❌ Discard</button>
+                            </div>
+
+                            <button id="play-user-formal" class="btn-icon btn-play-user hidden" onclick="playUserAudio('formal')">▶️ My Rec</button>
+                            <button id="btn-rate-formal" class="btn-icon hidden" onclick="rateRecording('formal')">⭐ Rate</button>
+                        </div>
+                        <div class="sentence-footer">
+                            <p id="transcription-formal" class="transcription-text"></p>
+                            <p id="rating-formal" class="rating-text"></p>
+                            <p id="mis-formal" class="mis-text"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="sentence-group">
+                        <h3>Informal</h3>
+                        <p id="sentence-informal">...</p>
+                        <p id="prosody-informal" class="prosody-text"></p>
+                        <div class="audio-controls-inline" id="controls-informal">
+                            <button class="btn-icon" onclick="playAudio('informal')">🔊 Listen</button>
+                            <button id="btn-record-informal" class="btn-icon btn-record" onclick="toggleRecording('informal')">🎤 Record</button>
+                            
+                            <div id="review-informal" class="hidden" style="display: inline-flex; gap: 5px;">
+                                <button class="btn-icon" onclick="playPreview('informal')">▶️ Preview</button>
+                                <button class="btn-icon btn-save" onclick="saveRecording('informal')">💾 Save</button>
+                                <button class="btn-icon btn-discard" onclick="discardRecording('informal')">❌ Discard</button>
+                            </div>
+
+                            <button id="play-user-informal" class="btn-icon btn-play-user hidden" onclick="playUserAudio('informal')">▶️ My Rec</button>
+                            <button id="btn-rate-informal" class="btn-icon hidden" onclick="rateRecording('informal')">⭐ Rate</button>
+                        </div>
+                        <div class="sentence-footer">
+                            <p id="transcription-informal" class="transcription-text"></p>
+                            <p id="rating-informal" class="rating-text"></p>
+                            <p id="mis-informal" class="mis-text"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="user-audio-section hidden">
+                    <!-- Hidden global status -->
+                    <p id="recording-status" class="status-text"></p>
+                </div>
+            </div>
+        </main>
+
+        <div class="action-bar">
+            <button id="btn-repeat" class="btn btn-secondary">🔄 Repeat Later</button>
+            <button id="btn-known" class="btn btn-primary">✅ Mark as Known</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

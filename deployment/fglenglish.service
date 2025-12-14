@@ -1,0 +1,12 @@
+[Unit]
+Description=Gunicorn instance to serve fglenglish
+After=network.target
+
+[Service]
+User=fleal
+WorkingDirectory=/home/fleal/fgl_projects/fglenglishapp
+Environment="PATH=/home/fleal/miniconda3/envs/audios/bin"
+ExecStart=/home/fleal/miniconda3/envs/audios/bin/gunicorn --workers 3 --bind 127.0.0.1:5002 web_app.app:app
+
+[Install]
+WantedBy=multi-user.target
