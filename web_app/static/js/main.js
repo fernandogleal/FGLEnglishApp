@@ -9,8 +9,9 @@ let currentUser = null;
 function initUser() {
     currentUser = localStorage.getItem('fgl_username');
     if (!currentUser) {
-        currentUser = prompt("Please enter your username:", "Guest");
-        if (!currentUser) currentUser = "Guest";
+        while (!currentUser) {
+            currentUser = prompt("Please enter your username:");
+        }
         localStorage.setItem('fgl_username', currentUser);
     }
     updateUserDisplay();
@@ -68,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadLevels();
         loadCard();
         levelSelect.addEventListener('change', loadCard);
-        document.getElementById('btn-repeat').addEventListener('click', loadCard);
+        // document.getElementById('btn-repeat').addEventListener('click', loadCard);
         document.getElementById('btn-known').addEventListener('click', markKnown);
     }
 });
