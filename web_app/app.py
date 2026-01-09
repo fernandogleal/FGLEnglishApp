@@ -8,11 +8,8 @@ import shutil
 import sqlite3
 import subprocess
 import requests
+import azure.cognitiveservices.speech as speechsdk
 
-try:
-    import azure.cognitiveservices.speech as speechsdk
-except ImportError:
-    speechsdk = None
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -35,6 +32,8 @@ AUDIO_DIR = os.path.join(BASE_DIR, 'audios')
 AUDIO_BOOK_DIR = os.path.join(BASE_DIR, 'audios', 'audio_book_author')
 AUDIO_BOOK_TTS_DIR = os.path.join(BASE_DIR, 'audios', 'audio_book_tts')
 USER_AUDIO_DIR = os.path.join(BASE_DIR, 'audios', 'audios_user')
+USER_AUDIO_TTS_DIR = os.path.join(BASE_DIR, 'audios', 'audios_user_tts')
+USER_AUDIO_SHADOWING_DIR = os.path.join(BASE_DIR, 'audios', 'audios_user_shadowing')
 FFMPEG_BIN = shutil.which("ffmpeg")
 SPEECH_KEY = os.environ.get("FGL_SPEECH_SERVICE_KEY")
 SPEECH_REGION = os.environ.get("FGL_SPEECH_REGION", "eastus")
@@ -278,7 +277,16 @@ def serve_audio(filename):
 
 @app.route('/audios_user/<path:filename>')
 def serve_user_audio(filename):
-    return send_from_directory(USER_AUDIO_DIR, filename)
+    # Check TTS directory first, then shadowing directory, then legacy directory
+    if os.path.exists(os.path.join(USER_AUDIO_TTS_DIR, filename)):
+        return send_from_directory(USER_AUDIO_TTS_DIR, filename)
+    if os.path.exists(os.path.join(USER_AUDIO_SHADOWING_DIR, filename)):
+        return send_from_directory(USER_AUDIO_SHADOWING_DIR, filename)
+    # Fallback to legacy directory for backward compatibility
+    if os.path.exists(os.path.join(USER_AUDIO_DIR, filename)):
+        return send_from_directory(USER_AUDIO_DIR, filename)
+    # Default to TTS directory (will 404 if not found)
+    return send_from_directory(USER_AUDIO_TTS_DIR, filename)
 
 @app.route('/audios_book/<path:filename>')
 def serve_book_audio(filename):
@@ -522,11 +530,11 @@ def upload_audio():
              return jsonify({'error': 'Missing sentence ID'}), 400
         
         temp_filename = secure_filename(f"shadowing_{sentence_id}_user.webm")
-        temp_path = os.path.join(USER_AUDIO_DIR, temp_filename)
+        temp_path = os.path.join(USER_AUDIO_SHADOWING_DIR, temp_filename)
         file.save(temp_path)
         
         final_filename = secure_filename(f"shadowing_{sentence_id}_user.wav")
-        final_path = os.path.join(USER_AUDIO_DIR, final_filename)
+        final_path = os.path.join(USER_AUDIO_SHADOWING_DIR, final_filename)
         converted, err = convert_to_wav_16k_mono(temp_path, final_path)
         
         if converted:
@@ -541,14 +549,14 @@ def upload_audio():
         # Update DB with user audio path
         try:
             conn = get_pitch_db_connection()
-            # Store relative path consistent with other audio paths
-            db_path = f"audios/audios_user/{stored_filename}"
+            # Store just the filename for consistency with how it's used in rate_endpoint
             conn.execute(
                 "UPDATE paragraphs SET user_audio_path = ? WHERE id = ?",
-                (db_path, sentence_id)
+                (stored_filename, sentence_id)
             )
             conn.commit()
             conn.close()
+            print(f"Shadowing audio saved: {stored_filename} for paragraph {sentence_id}")
         except Exception as e:
             print(f"Error updating user audio path in DB: {e}")
             
@@ -584,11 +592,11 @@ def upload_audio():
 
         # Save upload then normalize to WAV 16 kHz mono for downstream tools
         temp_filename = secure_filename(f"{audio_id_str}_{audio_type}_user.webm")
-        temp_path = os.path.join(USER_AUDIO_DIR, temp_filename)
+        temp_path = os.path.join(USER_AUDIO_TTS_DIR, temp_filename)
         file.save(temp_path)
 
         final_filename = secure_filename(f"{audio_id_str}_{audio_type}_user.wav")
-        final_path = os.path.join(USER_AUDIO_DIR, final_filename)
+        final_path = os.path.join(USER_AUDIO_TTS_DIR, final_filename)
         converted, err = convert_to_wav_16k_mono(temp_path, final_path)
         if converted:
             try:
@@ -639,7 +647,7 @@ def transcribe_endpoint():
         return jsonify({'error': 'No recording found to transcribe'}), 404
         
     filename = row[column_to_select]
-    file_path = os.path.join(USER_AUDIO_DIR, filename)
+    file_path = os.path.join(USER_AUDIO_TTS_DIR, filename)
     
     if not os.path.exists(file_path):
         conn.close()
@@ -678,12 +686,12 @@ def rate_endpoint():
         if not reference_text or not audio_path:
             return jsonify({'error': 'Missing shadowing parameters'}), 400
             
-        file_path = os.path.join(USER_AUDIO_DIR, audio_path)
+        file_path = os.path.join(USER_AUDIO_SHADOWING_DIR, audio_path)
         if not os.path.exists(file_path):
             return jsonify({'error': 'Audio file missing on server'}), 404
             
         # Ensure WAV 16k mono
-        temp_wav = os.path.join(USER_AUDIO_DIR, f"_rate_{audio_path}")
+        temp_wav = os.path.join(USER_AUDIO_SHADOWING_DIR, f"_rate_{audio_path}")
         converted, err = convert_to_wav_16k_mono(file_path, temp_wav)
         use_path = temp_wav if converted else file_path
 
@@ -766,14 +774,14 @@ def rate_endpoint():
     sentence = row[column_sentence] or ""
     audio_id_val = row["audio_id"] if row else None
     filename = row[column_audio]
-    file_path = os.path.join(USER_AUDIO_DIR, filename)
+    file_path = os.path.join(USER_AUDIO_TTS_DIR, filename)
     conn.close()
 
     if not os.path.exists(file_path):
         return jsonify({'error': 'Audio file missing on server'}), 404
 
     # Ensure WAV 16k mono for assessment
-    temp_wav = os.path.join(USER_AUDIO_DIR, f"_rate_{filename}.wav")
+    temp_wav = os.path.join(USER_AUDIO_TTS_DIR, f"_rate_{filename}.wav")
     converted, err = convert_to_wav_16k_mono(file_path, temp_wav)
     use_path = temp_wav if converted else file_path
 
