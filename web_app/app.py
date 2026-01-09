@@ -472,17 +472,32 @@ def get_levels():
 @app.route('/api/card')
 def get_card():
     level = request.args.get('level')
+    username = request.args.get('username')
+    
+    if not username:
+        return jsonify({'error': 'Username is required'}), 400
+
     conn = get_db_connection()
     
-    query = "SELECT * FROM oxford_words WHERE is_known = 0 AND (audio_formal_path IS NOT NULL OR audio_informal_path IS NOT NULL) AND ((sentence_formal IS NOT NULL AND sentence_formal != '') OR (sentence_informal IS NOT NULL AND sentence_informal != ''))"
-    params = []
+    # Query to get words not known by the user
+    # We prioritize user_words data over oxford_words for user specific fields
+    query = """
+        SELECT ow.*, 
+               uw.user_audio_formal_path, uw.user_audio_informal_path,
+               uw.user_transcription_formal, uw.user_transcription_informal
+        FROM oxford_words ow
+        LEFT JOIN user_words uw 
+        ON ow.word = uw.word AND ow.pos = uw.pos AND ow.level = uw.level AND uw.username = ?
+        WHERE (uw.is_known IS NULL OR uw.is_known = 0)
+        AND (ow.audio_formal_path IS NOT NULL OR ow.audio_informal_path IS NOT NULL)
+        AND ((ow.sentence_formal IS NOT NULL AND ow.sentence_formal != '') OR (ow.sentence_informal IS NOT NULL AND ow.sentence_informal != ''))
+    """
+    params = [username]
     
     if level and level != 'all':
-        query += " AND level = ?"
+        query += " AND ow.level = ?"
         params.append(level)
     
-    # Get a random card
-    # Note: For large DBs, ORDER BY RANDOM() can be slow, but for this size it's fine.
     query += " ORDER BY RANDOM() LIMIT 1"
     
     card = conn.execute(query, params).fetchone()
@@ -499,14 +514,21 @@ def mark_known():
     word = data.get('word')
     pos = data.get('pos')
     level = data.get('level')
+    username = data.get('username')
     
-    if not word:
-        return jsonify({'error': 'Missing word'}), 400
+    if not all([word, pos, level, username]):
+        return jsonify({'error': 'Missing parameters'}), 400
         
     conn = get_db_connection()
+    # Upsert into user_words
     conn.execute(
-        "UPDATE oxford_words SET is_known = 1 WHERE word = ? AND pos = ? AND level = ?",
-        (word, pos, level)
+        """
+        INSERT INTO user_words (username, word, pos, level, is_known)
+        VALUES (?, ?, ?, ?, 1)
+        ON CONFLICT(username, word, pos, level) 
+        DO UPDATE SET is_known = 1
+        """,
+        (username, word, pos, level)
     )
     conn.commit()
     conn.close()
@@ -520,7 +542,11 @@ def upload_audio():
         
     file = request.files['audio']
     source = request.form.get('source')
+    username = request.form.get('username')
     
+    if not username and source != 'shadowing': # Shadowing might not strictly require it yet, but flashcards do
+         return jsonify({'error': 'Username required'}), 400
+
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
@@ -590,12 +616,15 @@ def upload_audio():
         except (TypeError, ValueError):
             audio_id_str = str(audio_id_val)
 
-        # Save upload then normalize to WAV 16 kHz mono for downstream tools
-        temp_filename = secure_filename(f"{audio_id_str}_{audio_type}_user.webm")
+        # User request: [id]_[type]_[user].wav
+        # Sanitize username
+        safe_username = secure_filename(username)
+        
+        temp_filename = secure_filename(f"{audio_id_str}_{audio_type}_{safe_username}.webm")
         temp_path = os.path.join(USER_AUDIO_TTS_DIR, temp_filename)
         file.save(temp_path)
 
-        final_filename = secure_filename(f"{audio_id_str}_{audio_type}_user.wav")
+        final_filename = secure_filename(f"{audio_id_str}_{audio_type}_{safe_username}.wav")
         final_path = os.path.join(USER_AUDIO_TTS_DIR, final_filename)
         converted, err = convert_to_wav_16k_mono(temp_path, final_path)
         if converted:
@@ -608,12 +637,17 @@ def upload_audio():
             # Fallback: keep original upload if ffmpeg unavailable
             stored_filename = temp_filename
         
-        # Update DB
+        # Update user_words table
         column_to_update = 'user_audio_formal_path' if audio_type == 'formal' else 'user_audio_informal_path'
 
         conn.execute(
-            f"UPDATE oxford_words SET {column_to_update} = ? WHERE word = ? AND pos = ? AND level = ?",
-            (stored_filename, word, pos, level)
+            f"""
+            INSERT INTO user_words (username, word, pos, level, {column_to_update})
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(username, word, pos, level) 
+            DO UPDATE SET {column_to_update} = ?
+            """,
+            (username, word, pos, level, stored_filename, stored_filename)
         )
         conn.commit()
         conn.close()
@@ -629,17 +663,18 @@ def transcribe_endpoint():
     pos = data.get('pos')
     level = data.get('level')
     audio_type = data.get('type') # 'formal' or 'informal'
+    username = data.get('username')
     
-    if not all([word, pos, level, audio_type]):
+    if not all([word, pos, level, audio_type, username]):
         return jsonify({'error': 'Missing parameters'}), 400
         
     conn = get_db_connection()
     
-    # Get the user audio path
+    # Get the user audio path from user_words
     column_to_select = 'user_audio_formal_path' if audio_type == 'formal' else 'user_audio_informal_path'
     row = conn.execute(
-        f"SELECT {column_to_select} FROM oxford_words WHERE word = ? AND pos = ? AND level = ?",
-        (word, pos, level)
+        f"SELECT {column_to_select} FROM user_words WHERE word = ? AND pos = ? AND level = ? AND username = ?",
+        (word, pos, level, username)
     ).fetchone()
     
     if not row or not row[column_to_select]:
@@ -657,11 +692,12 @@ def transcribe_endpoint():
     transcription = transcribe_audio_file(file_path)
     
     if transcription:
-        # Save to DB
+        # Save to DB (user_words)
         transcription_col = 'user_transcription_formal' if audio_type == 'formal' else 'user_transcription_informal'
+        
         conn.execute(
-            f"UPDATE oxford_words SET {transcription_col} = ? WHERE word = ? AND pos = ? AND level = ?",
-            (transcription, word, pos, level)
+            f"UPDATE user_words SET {transcription_col} = ? WHERE word = ? AND pos = ? AND level = ? AND username = ?",
+            (transcription, word, pos, level, username)
         )
         conn.commit()
         conn.close()
@@ -754,26 +790,38 @@ def rate_endpoint():
     pos = data.get('pos')
     level = data.get('level')
     audio_type = data.get('type')  # 'formal' or 'informal'
+    username = data.get('username')
 
-    if not all([word, pos, level, audio_type]):
+    if not all([word, pos, level, audio_type, username]):
         return jsonify({'error': 'Missing parameters'}), 400
 
     conn = get_db_connection()
     column_audio = 'user_audio_formal_path' if audio_type == 'formal' else 'user_audio_informal_path'
     column_sentence = 'sentence_formal' if audio_type == 'formal' else 'sentence_informal'
 
-    row = conn.execute(
-        f"SELECT id AS audio_id, {column_audio}, {column_sentence} FROM oxford_words WHERE word = ? AND pos = ? AND level = ?",
+    # Get sentence from oxford_words
+    row_oxford = conn.execute(
+        f"SELECT id AS audio_id, {column_sentence} FROM oxford_words WHERE word = ? AND pos = ? AND level = ?",
         (word, pos, level)
     ).fetchone()
+    
+    if not row_oxford:
+        conn.close()
+        return jsonify({'error': 'Word not found'}), 404
 
-    if not row or not row[column_audio]:
+    # Get user audio from user_words
+    row_user = conn.execute(
+        f"SELECT {column_audio} FROM user_words WHERE word = ? AND pos = ? AND level = ? AND username = ?",
+        (word, pos, level, username)
+    ).fetchone()
+
+    if not row_user or not row_user[column_audio]:
         conn.close()
         return jsonify({'error': 'No recording found to rate'}), 404
 
-    sentence = row[column_sentence] or ""
-    audio_id_val = row["audio_id"] if row else None
-    filename = row[column_audio]
+    sentence = row_oxford[column_sentence] or ""
+    audio_id_val = row_oxford["audio_id"]
+    filename = row_user[column_audio]
     file_path = os.path.join(USER_AUDIO_TTS_DIR, filename)
     conn.close()
 
@@ -814,8 +862,9 @@ def rate_endpoint():
                 prosody_issues_json,
                 report_md_path,
                 speech_type,
-                source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source,
+                username
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 audio_id_val,
@@ -829,7 +878,8 @@ def rate_endpoint():
                 json.dumps({}),
                 None,
                 audio_type,
-                'flashcard'
+                'flashcard',
+                username
             ),
         )
         conn.commit()

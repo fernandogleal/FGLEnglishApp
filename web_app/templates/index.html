@@ -19,6 +19,7 @@
                     </nav>
                 </div>
                 <div style="display: flex; align-items: center; gap: 15px;">
+                    <span id="user-display" style="font-weight: bold; color: var(--primary-color); cursor: pointer;" title="Click to change user">👤 Guest</span>
                     <button id="theme-toggle" class="btn-icon" aria-label="Toggle Dark Mode">🌙</button>
                     <div class="controls">
                         <label for="level-select">Level:</label>
@@ -50,8 +51,7 @@
                             
                             <div id="review-formal" class="hidden" style="display: inline-flex; gap: 5px;">
                                 <button class="btn-icon" onclick="playPreview('formal')">▶️ Preview</button>
-                                <button class="btn-icon btn-save" onclick="saveRecording('formal')">💾 Save</button>
-                                <button class="btn-icon btn-discard" onclick="discardRecording('formal')">❌ Discard</button>
+                                <!-- Save/Discard removed as per request (Auto-save implemented) -->
                             </div>
 
                             <button id="play-user-formal" class="btn-icon btn-play-user hidden" onclick="playUserAudio('formal')">▶️ My Rec</button>
@@ -74,8 +74,7 @@
                             
                             <div id="review-informal" class="hidden" style="display: inline-flex; gap: 5px;">
                                 <button class="btn-icon" onclick="playPreview('informal')">▶️ Preview</button>
-                                <button class="btn-icon btn-save" onclick="saveRecording('informal')">💾 Save</button>
-                                <button class="btn-icon btn-discard" onclick="discardRecording('informal')">❌ Discard</button>
+                                <!-- Save/Discard removed as per request (Auto-save implemented) -->
                             </div>
 
                             <button id="play-user-informal" class="btn-icon btn-play-user hidden" onclick="playUserAudio('informal')">▶️ My Rec</button>
