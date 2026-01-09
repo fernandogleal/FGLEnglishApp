@@ -3,6 +3,35 @@ let mediaRecorder = null;
 let audioChunks = [];
 let currentRecordingType = null; // 'formal' or 'informal'
 let currentAudioBlob = null;
+let currentUser = null;
+
+// User Management
+function initUser() {
+    currentUser = localStorage.getItem('fgl_username');
+    if (!currentUser) {
+        currentUser = prompt("Please enter your username:", "Guest");
+        if (!currentUser) currentUser = "Guest";
+        localStorage.setItem('fgl_username', currentUser);
+    }
+    updateUserDisplay();
+    
+    document.getElementById('user-display').addEventListener('click', () => {
+        const newUser = prompt("Switch user (enter username):", currentUser);
+        if (newUser && newUser !== currentUser) {
+            currentUser = newUser;
+            localStorage.setItem('fgl_username', currentUser);
+            updateUserDisplay();
+            loadCard(); // Reload for new user
+        }
+    });
+}
+
+function updateUserDisplay() {
+    const display = document.getElementById('user-display');
+    if (display) {
+        display.textContent = `👤 ${currentUser}`;
+    }
+}
 
 // Theme Management
 function initTheme() {
@@ -32,6 +61,7 @@ function updateThemeIcon(theme) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
+    initUser();
     
     const levelSelect = document.getElementById('level-select');
     if (levelSelect) {
@@ -65,7 +95,7 @@ async function loadCard() {
     resetUI();
 
     try {
-        const response = await fetch(`/api/card?level=${level}`);
+        const response = await fetch(`/api/card?level=${level}&username=${encodeURIComponent(currentUser)}`);
         if (!response.ok) throw new Error('No cards found');
         
         currentCard = await response.json();
@@ -196,10 +226,21 @@ function playUserAudio(type) {
     if (!currentCard) return;
     
     const path = type === 'formal' ? currentCard.user_audio_formal_path : currentCard.user_audio_informal_path;
-    if (!path) return;
+    if (!path) {
+        console.warn('No user audio path found for type:', type);
+        return;
+    }
     
+    console.log('Playing user audio:', path);
     const audio = new Audio(`/audios_user/${path}`);
-    audio.play();
+    audio.onerror = (e) => {
+        console.error('Error playing user audio:', e);
+        alert('Error playing audio. File might be missing or format unsupported.');
+    };
+    audio.play().catch(e => {
+        console.error('Error starting playback:', e);
+        alert('Error starting playback: ' + e.message);
+    });
 }
 
 async function markKnown() {
@@ -212,7 +253,8 @@ async function markKnown() {
             body: JSON.stringify({
                 word: currentCard.word,
                 pos: currentCard.pos,
-                level: currentCard.level
+                level: currentCard.level,
+                username: currentUser
             })
         });
         loadCard();
@@ -234,7 +276,8 @@ async function toggleRecording(type) {
             alert('Already recording another section!');
         }
     } else {
-        // Start recording
+        // Start recording - clear any previous blob
+        currentAudioBlob = null;
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
@@ -242,19 +285,29 @@ async function toggleRecording(type) {
             currentRecordingType = type;
 
             mediaRecorder.ondataavailable = (event) => {
-                audioChunks.push(event.data);
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                    console.log('Audio chunk received:', event.data.size);
+                }
             };
 
             mediaRecorder.onstop = () => {
-                currentAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                // Show Review UI
-                btn.classList.add('hidden'); // Hide Record/Stop button
+                const mimeType = mediaRecorder.mimeType || 'audio/webm';
+                currentAudioBlob = new Blob(audioChunks, { type: mimeType });
+                console.log('Recording stopped. Blob size:', currentAudioBlob.size, 'Type:', currentAudioBlob.type);
+                // Stop all tracks to release microphone
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                // Show Review UI - Auto Save
+                btn.classList.add('hidden'); 
                 btn.classList.remove('recording');
                 document.getElementById(`review-${type}`).classList.remove('hidden');
-                document.getElementById('recording-status').textContent = 'Review your recording';
+                
+                // Trigger Auto Save
+                saveRecording(type);
             };
 
-            mediaRecorder.start();
+            mediaRecorder.start(200);
             btn.textContent = '⏹ Stop';
             btn.classList.add('recording');
             document.getElementById('recording-status').textContent = `Recording ${type}...`;
@@ -267,20 +320,39 @@ async function toggleRecording(type) {
 }
 
 function playPreview(type) {
-    if (!currentAudioBlob) return;
+    if (!currentAudioBlob) {
+        console.error('No audio blob to play');
+        return;
+    }
+    console.log('Playing preview. Blob size:', currentAudioBlob.size, 'Type:', currentAudioBlob.type);
     const audioUrl = URL.createObjectURL(currentAudioBlob);
     const audio = new Audio(audioUrl);
-    audio.play();
+    audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+    };
+    audio.play().catch(e => {
+        console.error('Error playing preview:', e);
+        alert('Error playing preview: ' + e.message);
+    });
 }
 
 function discardRecording(type) {
+    // If recording is still active, stop it first
+    if (mediaRecorder && mediaRecorder.state === 'recording' && currentRecordingType === type) {
+        mediaRecorder.stop();
+        // Stop all tracks to release microphone
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    }
+    
     currentAudioBlob = null;
     currentRecordingType = null;
+    audioChunks = [];
     
     // Reset UI
     document.getElementById(`review-${type}`).classList.add('hidden');
     const btn = document.getElementById(`btn-record-${type}`);
     btn.classList.remove('hidden');
+    btn.classList.remove('recording');
     btn.textContent = '🎤 Record';
     document.getElementById('recording-status').textContent = 'Recording discarded.';
 }
@@ -294,8 +366,9 @@ async function saveRecording(type) {
     formData.append('pos', currentCard.pos);
     formData.append('level', currentCard.level);
     formData.append('type', type);
+    formData.append('username', currentUser);
 
-    document.getElementById('recording-status').textContent = 'Saving...';
+    document.getElementById('recording-status').textContent = 'Auto-saving...';
 
     try {
         const response = await fetch('/api/upload_audio', {
@@ -310,19 +383,29 @@ async function saveRecording(type) {
                 currentCard.user_audio_formal_path = result.path;
                 document.getElementById('play-user-formal').classList.remove('hidden');
                 document.getElementById('btn-rate-formal').classList.remove('hidden');
+                // Clear old rating when new audio is saved
+                document.getElementById('rating-formal').textContent = '';
+                document.getElementById('mis-formal').textContent = '';
+                document.getElementById('transcription-formal').textContent = '';
             } else {
                 currentCard.user_audio_informal_path = result.path;
                 document.getElementById('play-user-informal').classList.remove('hidden');
                 document.getElementById('btn-rate-informal').classList.remove('hidden');
+                // Clear old rating when new audio is saved
+                document.getElementById('rating-informal').textContent = '';
+                document.getElementById('mis-informal').textContent = '';
+                document.getElementById('transcription-informal').textContent = '';
             }
             
-            // Reset UI
             document.getElementById(`review-${type}`).classList.add('hidden');
             const btn = document.getElementById(`btn-record-${type}`);
             btn.classList.remove('hidden');
             btn.textContent = '🎤 Record';
             
             document.getElementById('recording-status').textContent = 'Saved!';
+            
+            // Auto Rate after save? Not requested, but maybe useful.
+            // But we already showed the "My Rec" button.
         } else {
             document.getElementById('recording-status').textContent = 'Error saving.';
         }
@@ -334,6 +417,7 @@ async function saveRecording(type) {
     currentRecordingType = null;
     mediaRecorder = null;
     currentAudioBlob = null;
+    audioChunks = [];
 }
 
 function rateRecording(type) {
@@ -357,7 +441,8 @@ function rateRecording(type) {
             word: currentCard.word,
             pos: currentCard.pos,
             level: currentCard.level,
-            type: type
+            type: type,
+            username: currentUser
         })
     }).then(resp => resp.json())
       .then(data => {
@@ -367,7 +452,16 @@ function rateRecording(type) {
               return;
           }
           const { pronunciation_score, accuracy_score, fluency_score, prosody_score, total_score, recognized_text, mispronunciations } = data;
+          
           ratingEl.textContent = `Total: ${total_score?.toFixed(1)} | Pronunciation: ${pronunciation_score?.toFixed(1)} | Acc: ${accuracy_score?.toFixed(1)} | Flu: ${fluency_score?.toFixed(1)} | Prosody: ${prosody_score?.toFixed(1)}`;
+          
+          // Conditional Formatting
+          ratingEl.className = 'rating-text'; // Reset
+          if (total_score >= 90) ratingEl.classList.add('score-excellent');
+          else if (total_score >= 80) ratingEl.classList.add('score-good');
+          else if (total_score >= 60) ratingEl.classList.add('score-average');
+          else ratingEl.classList.add('score-poor');
+          
           const transcriptionEl = document.getElementById(`transcription-${type}`);
           transcriptionEl.textContent = recognized_text ? `"${recognized_text}"` : '';
           const misList = (mispronunciations || []).map(w => `${w.word} (${w.accuracy?.toFixed(1)})`).join(', ');
@@ -396,7 +490,8 @@ async function requestTranscription(type) {
                 word: currentCard.word,
                 pos: currentCard.pos,
                 level: currentCard.level,
-                type: type
+                type: type,
+                username: currentUser
             })
         });
         

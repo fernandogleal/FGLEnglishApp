@@ -232,7 +232,7 @@ function createCard(paragraph) {
             </div>
         `;
         rateButtonClass = 'btn-icon';
-        rateButtonAttr = `data-audio-path="${filename}"`;
+        rateButtonAttr = `data-audio-path="${paragraph.user_audio_path}"`;
     }
 
     const textHtml = `<p class="sentence-text" style="margin-bottom: 15px;">${paragraph.content}</p>`;
@@ -353,20 +353,25 @@ async function uploadAudio(id, blob) {
             body: formData
         });
         const result = await response.json();
+        console.log('Upload result:', result);
+        
         if (result.success) {
             // Store the path for rating
-            document.getElementById(`btn-rate-${id}`).dataset.audioPath = result.path;
+            const audioPath = result.path;
+            console.log('Storing audio path:', audioPath);
+            document.getElementById(`btn-rate-${id}`).dataset.audioPath = audioPath;
 
             // Show the audio player
             const container = document.getElementById(`user-audio-container-${id}`);
             if (container) {
-                const filename = result.path;
+                const filename = audioPath;
                 container.innerHTML = `
                     <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #eee; background-color: #e8f5e9; padding: 10px; border-radius: 5px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px; color: #333;">User Audio:</label>
                         <audio controls src="/audios_user/${filename}?t=${new Date().getTime()}" style="width: 100%;"></audio>
                     </div>
                 `;
+                console.log('Audio player updated for ID:', id);
             }
         } else {
             console.error('Upload failed:', result.error);
@@ -382,8 +387,16 @@ async function rateRecording(id) {
     const referenceText = document.getElementById(`text-${id}`).textContent;
     const resultBox = document.getElementById(`result-${id}`);
 
+    console.log('Attempting to rate recording:', { id, audioPath, referenceText });
+
     if (!audioPath) {
+        console.error('No audio path found. Dataset:', btn.dataset);
         alert('Please record and wait for upload first.');
+        return;
+    }
+
+    if (!referenceText || referenceText.trim() === '') {
+        alert('No reference text available for rating.');
         return;
     }
 
@@ -404,6 +417,7 @@ async function rateRecording(id) {
         });
         
         const result = await response.json();
+        console.log('Rating result:', result);
         
         if (result.success) {
             resultBox.style.display = 'block';
@@ -441,11 +455,12 @@ async function rateRecording(id) {
                 ${misHtml}
             `;
         } else {
+            console.error('Rating failed:', result.error);
             alert('Rating failed: ' + result.error);
         }
     } catch (error) {
         console.error('Error rating:', error);
-        alert('Error rating recording');
+        alert('Error rating recording: ' + error.message);
     } finally {
         btn.disabled = false;
         btn.textContent = '⭐ Rate';
